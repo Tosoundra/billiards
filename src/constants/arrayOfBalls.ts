@@ -1,5 +1,18 @@
 import { getRandomColor } from './getRandomColor';
 const BALL_RADIUS = 20;
+
+export interface Ball {
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+  radius: number;
+  color: string;
+  friction: number;
+  selected: boolean;
+  mass: number;
+}
+
 export const arrayOfBalls: Ball[] = [
   {
     x: 800 / 2 + BALL_RADIUS,
@@ -80,15 +93,3 @@ export const arrayOfBalls: Ball[] = [
     mass: Math.PI * 20 * 20,
   },
 ];
-
-interface Ball {
-  x: number;
-  y: number;
-  dx: number;
-  dy: number;
-  radius: number;
-  color: string;
-  friction: number;
-  selected: boolean;
-  mass: number;
-}
