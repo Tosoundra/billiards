@@ -1,7 +1,15 @@
-import { useRef, useState, useEffect } from 'react';
-import './App.css';
-import { ColorPicker } from '../ColorPicker/ColorPicker';
+import { useEffect, useRef, useState } from 'react';
 import { arrayOfBalls } from '../../constants/arrayOfBalls';
+import { ColorPicker } from '../ColorPicker/ColorPicker';
+import './App.css';
+const prevMousePos = { x: 0, y: 0 };
+
+const getCoordinates = (event: MouseEvent, canvas: HTMLCanvasElement) => {
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = event.clientX - rect.left;
+  const mouseY = event.clientY - rect.top;
+  return { mouseX, mouseY, rect };
+};
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -11,6 +19,7 @@ function App() {
   const [selectedBallColor, setSelectedBallColor] = useState<string | null>(null);
   const [clickInsideBall, setClickInsideBall] = useState(false);
   const [isColorPickerVisible, setIsColorPickerVisible] = useState(false);
+  const [isAlternativeMode, setIsAlternativeMode] = useState(false);
 
   const applyColorToSelectedBall = (color: string) => {
     const updatedBalls = balls.map((ball, index) =>
@@ -19,53 +28,95 @@ function App() {
     setBalls(updatedBalls);
   };
 
+  const handleMouseDown = (event: MouseEvent) => {
+    const { mouseX, mouseY } = getCoordinates(event, canvasRef.current!);
+
+    for (const [index, ball] of balls.entries()) {
+      const dx = mouseX - ball.x;
+      const dy = mouseY - ball.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance <= ball.radius) {
+        ball.selected = true;
+        setClickInsideBall(true);
+        setSelectedBallColor(balls[index].color);
+        setSelectedBall(index);
+        setIsColorPickerVisible(true);
+        return;
+      }
+    }
+  };
+
+  const handleMouseOnlyMove = (event: MouseEvent) => {
+    const { mouseX, mouseY } = getCoordinates(event, canvasRef.current!);
+
+    const cursorSpeed = { x: 0, y: 0 };
+    if (prevMousePos) {
+      cursorSpeed.x = mouseX - prevMousePos.x;
+      cursorSpeed.y = mouseY - prevMousePos.y;
+    }
+
+    prevMousePos.x = mouseX;
+    prevMousePos.y = mouseY;
+
+    for (const ball of balls) {
+      const dx = mouseX - ball.x;
+      const dy = mouseY - ball.y;
+      const distanceSquared = dx * dx + dy * dy;
+
+      if (distanceSquared <= ball.radius * ball.radius) {
+        const forceDirectionX = (-dx / Math.sqrt(distanceSquared)) * 5;
+        const forceDirectionY = (-dy / Math.sqrt(distanceSquared)) * 5;
+        ball.dx += cursorSpeed.x + forceDirectionX * 0.1;
+        ball.dy += cursorSpeed.y + forceDirectionY * 0.1;
+      }
+    }
+  };
+
+  const handleMouseMove = (event: MouseEvent) => {
+    for (const ball of balls) {
+      if (ball.selected) {
+        const { rect } = getCoordinates(event, canvasRef.current!);
+        ball.dx = (event.clientX - rect.left - ball.x) / 10;
+        ball.dy = (event.clientY - rect.top - ball.y) / 10;
+      }
+    }
+  };
+
+  const handleMouseUp = () => {
+    for (const ball of balls) {
+      if (ball.selected) {
+        ball.selected = false;
+        return;
+      }
+    }
+  };
+
+  const onlyMouseMoveMode = () => {
+    canvasRef!.current!.removeEventListener('mousemove', handleMouseMove);
+    canvasRef!.current!.removeEventListener('mouseup', handleMouseUp);
+    canvasRef!.current!.addEventListener('mousemove', handleMouseOnlyMove);
+  };
+
+  const shouldClickOnBallMode = () => {
+    canvasRef.current!.removeEventListener('mousemove', handleMouseOnlyMove);
+    canvasRef.current!.addEventListener('mousemove', handleMouseMove);
+    canvasRef.current!.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const toggleMoveBallsModeOnClickButtonHandle = () => {
+    if (!isAlternativeMode) {
+      shouldClickOnBallMode();
+    } else {
+      onlyMouseMoveMode();
+    }
+  };
+
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas!.getContext('2d');
+    const ctx = canvasRef.current!.getContext('2d');
     let requestId: number;
 
-    const handleMouseDown = (event: MouseEvent) => {
-      const rect = canvas!.getBoundingClientRect();
-      const mouseX = event.clientX - rect.left;
-      const mouseY = event.clientY - rect.top;
-
-      for (const [index, ball] of balls.entries()) {
-        const dx = mouseX - ball.x;
-        const dy = mouseY - ball.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance <= ball.radius) {
-          ball.selected = true;
-          setClickInsideBall(true);
-          setSelectedBallColor(balls[index].color);
-          setSelectedBall(index);
-          setIsColorPickerVisible(true);
-          return;
-        }
-      }
-    };
-
-    const handleMouseMove = (event: MouseEvent) => {
-      for (const ball of balls) {
-        if (ball.selected) {
-          const rect = canvas!.getBoundingClientRect();
-          ball.dx = (event.clientX - rect.left - ball.x) / 10;
-          ball.dy = (event.clientY - rect.top - ball.y) / 10;
-          draw();
-        }
-      }
-    };
-
-    const handleMouseUp = () => {
-      for (const ball of balls) {
-        if (ball.selected) {
-          ball.selected = false;
-          return;
-        }
-      }
-    };
-
     const draw = () => {
-      ctx!.clearRect(0, 0, canvas!.width, canvas!.height);
+      ctx!.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
       balls.forEach((ball) => {
         ctx!.beginPath();
         ctx!.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
@@ -83,10 +134,10 @@ function App() {
           ball.x += ball.dx;
           ball.y += ball.dy;
 
-          if (ball.x + ball.radius > canvas!.width || ball.x - ball.radius < 0) {
+          if (ball.x + ball.radius > canvasRef.current!.width || ball.x - ball.radius < 0) {
             ball.dx *= -1;
           }
-          if (ball.y + ball.radius > canvas!.height || ball.y - ball.radius < 0) {
+          if (ball.y + ball.radius > canvasRef.current!.height || ball.y - ball.radius < 0) {
             ball.dy *= -1;
           }
 
@@ -135,19 +186,26 @@ function App() {
       requestId = requestAnimationFrame(animate);
     };
 
-    canvas!.addEventListener('mousedown', handleMouseDown);
-    canvas!.addEventListener('mousemove', handleMouseMove);
-    canvas!.addEventListener('mouseup', handleMouseUp);
-
     animate();
 
     return () => {
       cancelAnimationFrame(requestId);
-      canvas!.removeEventListener('mousedown', handleMouseDown);
-      canvas!.removeEventListener('mousemove', handleMouseMove);
-      canvas!.removeEventListener('mouseup', handleMouseUp);
     };
   }, [balls]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    toggleMoveBallsModeOnClickButtonHandle();
+
+    canvas!.addEventListener('mousedown', handleMouseDown);
+
+    return () => {
+      canvas!.removeEventListener('mousedown', handleMouseDown);
+      canvas!.removeEventListener('mousemove', handleMouseMove);
+      canvas!.removeEventListener('mousemove', handleMouseOnlyMove);
+      canvas!.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isAlternativeMode]);
 
   useEffect(() => {
     const outsideOnClickHandle = (event: MouseEvent) => {
@@ -171,7 +229,20 @@ function App() {
 
   return (
     <div>
-      <canvas ref={canvasRef} width={800} height={600} style={{ border: '1px solid black' }} />
+      <canvas
+        id="canvas"
+        ref={canvasRef}
+        width={800}
+        height={600}
+        style={{ border: '1px solid black' }}
+      />
+      <button
+        onClick={() => {
+          setIsAlternativeMode((prev) => !prev);
+        }}
+        type="button">
+        Сменить режим
+      </button>
       {isColorPickerVisible && (
         <ColorPicker
           onChange={applyColorToSelectedBall}
